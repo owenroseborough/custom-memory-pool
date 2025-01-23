@@ -9,11 +9,12 @@ using namespace std;
 template <typename T>
 class MemoryPool {
 private:
-    size_t chunkSize_;         // The size of each memory chunk
-    size_t chunkAlign_;        // The alignment of memory chunks
-    size_t poolSize_;          // Number of chunks in the pool
-    void* pool_;               // The large block of memory
-    std::vector<T*> freeList_; // Free list to track available memory chunks
+    size_t chunkSize_;           // The size of each memory chunk
+    size_t chunkAlign_;          // The alignment of memory chunks
+    size_t poolSize_;            // Number of chunks in the pool
+    size_t cacheLinesPerObject_; // Number of cache lines per object
+    void* pool_;                 // The large block of memory
+    std::vector<T*> freeList_;   // Free list to track available memory chunks
 public:
     // Constructor to initialize the memory pool of template type
     MemoryPool(size_t poolSize, string alignment = "CacheLineAlignment"){
@@ -36,54 +37,55 @@ public:
             double cacheLinesPerObject = (static_cast<double>(blockCounter) * chunkAlign_) / cacheLineSize;
             size_t numObjectsPerCacheLine = (cacheLineSize / chunkAlign_) / blockCounter;
 
+            size_t poolSize;
             if (cacheLinesPerObject < 1) {
-                size_t poolSize = (ceil(static_cast<double>(poolSize_) / numObjectsPerCacheLine) * cacheLineSize) + chunkAlign_;
+                cacheLinesPerObject_ = 0;
+                poolSize = (ceil(static_cast<double>(poolSize_) / numObjectsPerCacheLine) * cacheLineSize) + chunkAlign_;
             }
             else {
-                size_t poolSize = poolSize_ * ceil(cacheLinesPerObject) * cacheLineSize + chunkAlign_;
+                cacheLinesPerObject_ = ceil(cacheLinesPerObject);
+                poolSize = poolSize_ * ceil(cacheLinesPerObject) * cacheLineSize + chunkAlign_;
             }
             // Allocate a large block of memory for the pool
             pool_ = malloc(poolSize);
             assert(pool_ != nullptr); // Ensure memory was allocated
 
             // Align pool_ pointer to chunkAlign_ requirement
-            // use std::align here to get first aligned address of T from pool_
-            // need pointer address to be aligned according to chunkAlign_
             pool_ = align(chunkAlign_, chunkSize_, pool_, poolSize);
 
-            // TODO: this below function wrong for types longer than cache line likely
-            // Initialize the free list with all memory chunks
+            // TODO: test below section with different inputs
+            size_t objectCounter = 0;
+            char* startCacheLine = static_cast<char*>(pool_);
+            char* endCacheLine = startCacheLine + cacheLineSize;
+            char* startAllocAddress = static_cast<char*>(pool_);
+            char* endAllocAddress;
+            while (objectCounter < poolSize_) {
+                endAllocAddress = startAllocAddress + (blockCounter * chunkAlign_);
 
-            // what we want:
-            // we are pushing addresses onto the freeList
-            
-            // start address
-            // end address
-
-            // calculate how many cache lines one object needs
-
-            // if larger than 1, next allocation will be at starting pool address 
-            // plus 2
-
-            // if larger than 2, next allocation will be at starting pool address
-            // plus 3
-
-            // 00
-            // 64
-            // 128
-            // 192
-            if (cacheLinesPerObject < 1) {
-                for (size_t i = 0; i < ceil(poolSize_ / numObjectsPerCacheLine);) {
-                    for (size_t j = 0; j < numObjectsPerCacheLine; j++) {
-                        freeList_.push_back(static_cast<T*>(pool_) + (i * cacheLineSize) + (j * blockCounter * chunkAlign_));
+                if (startAllocAddress != startCacheLine && endAllocAddress > endCacheLine) {
+                    freeList_.push_back(static_cast<T*>(static_cast<void*>(startCacheLine + cacheLineSize)));
+                    if (cacheLinesPerObject_ < 1) {  // object can fit on cache line
+                        startAllocAddress = startCacheLine + cacheLineSize + (blockCounter * chunkAlign_);
+                        startCacheLine = startCacheLine + cacheLineSize;
                     }
+                    else {   // object larger than cache line
+                        startAllocAddress = startCacheLine + cacheLineSize + (cacheLinesPerObject_ * cacheLineSize);
+                        startCacheLine = startAllocAddress;
+                    }
+                    endCacheLine = startCacheLine + cacheLineSize;
                 }
+                else if (startAllocAddress == startCacheLine && endAllocAddress > endCacheLine) {
+                    freeList_.push_back(static_cast<T*>(static_cast<void*>(startAllocAddress)));
+                    startAllocAddress = startAllocAddress + cacheLinesPerObject_ * cacheLineSize;
+                    startCacheLine = startAllocAddress;
+                    endCacheLine = startCacheLine + cacheLineSize;
+                }
+                else {
+                    freeList_.push_back(static_cast<T*>(static_cast<void*>(startAllocAddress)));
+                    startAllocAddress += (blockCounter * chunkAlign_);
+                }
+                objectCounter++;
             }
-            else {
-                // TODO: handle big objects
-            }
-
-            
         }
         // otherwise for read-heavy workloads that don't require cache line alignment
         else {
