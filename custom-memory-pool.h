@@ -2,19 +2,20 @@
 #include <vector>
 #include <cassert>
 #include <memory>
-
 #include "get-cache-line-size.h"
 using namespace std;
 
 template <typename T>
 class MemoryPool {
 private:
-    size_t chunkSize_;           // The size of each memory chunk
-    size_t chunkAlign_;          // The alignment of memory chunks
-    size_t poolSize_;            // Number of chunks in the pool
-    size_t cacheLinesPerObject_; // Number of cache lines per object
-    void* pool_;                 // The large block of memory
-    std::vector<T*> freeList_;   // Free list to track available memory chunks
+    size_t chunkSize_;            // The size of each memory chunk
+    size_t chunkAlign_;           // The alignment of memory chunks
+    size_t poolSize_;             // Number of chunks in the pool
+    size_t cacheLinesPerObject_;  // Number of cache lines per object
+    size_t numItemsPerCacheLine_; // Number of items per cache line
+    size_t poolByteSize_;         // Number of bytes in pool
+    void* pool_;                  // The large block of memory
+    std::vector<T*> freeList_;    // Free list to track available memory chunks
 public:
     // Constructor to initialize the memory pool of template type
     MemoryPool(size_t poolSize, string alignment = "CacheLineAlignment"){
@@ -26,34 +27,27 @@ public:
         // for write-heavy workloads that require cache alignment
         if (alignment == "CacheLineAlignment") {
             size_t cacheLineSize = getCacheLineSize();   // typically 64 byte
-            size_t blockCounter = 0;
-            size_t remainder = chunkSize_;
-            while (remainder > chunkAlign_) {
-                remainder -= chunkAlign_;
-                blockCounter++;
-            }
-            blockCounter++;
+            size_t blockCounter = ceil(static_cast <double>(chunkSize_) / chunkAlign_);
 
+            numItemsPerCacheLine_ = floor(cacheLineSize / (blockCounter * chunkAlign_));
             double cacheLinesPerObject = (static_cast<double>(blockCounter) * chunkAlign_) / cacheLineSize;
-            size_t numObjectsPerCacheLine = (cacheLineSize / chunkAlign_) / blockCounter;
 
-            size_t poolSize;
             if (cacheLinesPerObject < 1) {
                 cacheLinesPerObject_ = 0;
-                poolSize = (ceil(static_cast<double>(poolSize_) / numObjectsPerCacheLine) * cacheLineSize) + chunkAlign_;
+                poolByteSize_ = ceil(static_cast<double>(poolSize_) / numItemsPerCacheLine_) * cacheLineSize;
             }
             else {
+                numItemsPerCacheLine_ = 1;
                 cacheLinesPerObject_ = ceil(cacheLinesPerObject);
-                poolSize = poolSize_ * ceil(cacheLinesPerObject) * cacheLineSize + chunkAlign_;
+                poolByteSize_ = poolSize_ * ceil(cacheLinesPerObject) * cacheLineSize;
             }
             // Allocate a large block of memory for the pool
-            pool_ = malloc(poolSize);
-            assert(pool_ != nullptr); // Ensure memory was allocated
+            pool_ = malloc(poolByteSize_);
+            if (pool_ == nullptr) {  // Ensure memory was allocated
+                cerr << "Memory allocation failed!" << endl;
+                terminate();
+            }
 
-            // Align pool_ pointer to chunkAlign_ requirement
-            pool_ = align(chunkAlign_, chunkSize_, pool_, poolSize);
-
-            // TODO: test below section with different inputs
             size_t objectCounter = 0;
             char* startCacheLine = static_cast<char*>(pool_);
             char* endCacheLine = startCacheLine + cacheLineSize;
@@ -92,7 +86,18 @@ public:
             cout << "placeholder";
         }
     }
-
+    size_t getCacheLinesPerObject() {
+        return cacheLinesPerObject_;
+    }
+    size_t getLengthFreeList() {
+        return freeList_.size();
+    }
+    size_t getNumItemsPerCacheLine() {
+        return numItemsPerCacheLine_;
+    }
+    size_t getPoolByteSize() {
+        return poolByteSize_;
+    }
     // Destructor to free the memory when done
     ~MemoryPool() {
         free(pool_);
