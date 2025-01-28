@@ -1,3 +1,4 @@
+#include <array>
 #include "pch.h"
 #include "CppUnitTest.h"
 #include "../custom-memory-pool/custom-memory-pool.h"
@@ -193,7 +194,7 @@ namespace custommemorypoolunittests
 	public:
 		TEST_METHOD(AllocateAndDeallocateSeventeenIntegers)
 		{
-			vector<int*> seventeenAllocations;
+			vector<shared_ptr<int*>> seventeenAllocations;
 			MemoryPool<int> pool((size_t)17, "CacheLineAlignment");
 			for (size_t i = 0; i < 17; i++) {
 				seventeenAllocations.push_back(pool.allocate());
@@ -201,22 +202,22 @@ namespace custommemorypoolunittests
 			size_t counter = 0;
 			for (auto intP : seventeenAllocations) {
 				int* testPtr;
-				Assert::AreEqual(typeid(testPtr).name(), typeid(intP).name());
+				Assert::AreEqual(typeid(testPtr).name(), typeid(*intP.get()).name());
 				if (counter < 16) {
-					Assert::IsTrue(seventeenAllocations[counter] > seventeenAllocations[counter + 1]);
+					Assert::IsTrue(*seventeenAllocations[counter].get() > *seventeenAllocations[counter + 1].get());
 				}
 				counter++;
 			}
 			size_t freeListSize = pool.getLengthFreeList();
 			for (auto pointer : seventeenAllocations) {
-				pool.deallocate(pointer);
+				pool.deallocate(*pointer.get());
 				Assert::IsTrue(pool.getLengthFreeList() == freeListSize + 1);
 				freeListSize += 1;
 			}
 		}
 		TEST_METHOD(AllocateAndDeallocateSeventeenStrings)
 		{
-			vector<string*> seventeenAllocations;
+			vector<shared_ptr<string*>> seventeenAllocations;
 			MemoryPool<string> pool((size_t)17, "CacheLineAlignment");
 			for (size_t i = 0; i < 17; i++) {
 				seventeenAllocations.push_back(pool.allocate());
@@ -224,15 +225,15 @@ namespace custommemorypoolunittests
 			size_t counter = 0;
 			for (auto stringP : seventeenAllocations) {
 				string* testPtr;
-				Assert::AreEqual(typeid(testPtr).name(), typeid(stringP).name());
+				Assert::AreEqual(typeid(testPtr).name(), typeid(*stringP.get()).name());
 				if (counter < 16) {
-					Assert::IsTrue(seventeenAllocations[counter] > seventeenAllocations[counter + 1]);
+					Assert::IsTrue(*seventeenAllocations[counter].get() > *seventeenAllocations[counter + 1].get());
 				}
 				counter++;
 			}
 			size_t freeListSize = pool.getLengthFreeList();
 			for (auto pointer : seventeenAllocations) {
-				pool.deallocate(pointer);
+				pool.deallocate(*pointer.get());
 				Assert::IsTrue(pool.getLengthFreeList() == freeListSize + 1);
 				freeListSize += 1;
 			}
@@ -245,7 +246,7 @@ namespace custommemorypoolunittests
 				string third;
 				string fourth;
 			};
-			vector<equal160Bytes*> seventeenAllocations;
+			vector<shared_ptr<equal160Bytes*>> seventeenAllocations;
 			MemoryPool<equal160Bytes> pool((size_t)17, "CacheLineAlignment");
 			for (size_t i = 0; i < 17; i++) {
 				seventeenAllocations.push_back(pool.allocate());
@@ -253,15 +254,15 @@ namespace custommemorypoolunittests
 			size_t counter = 0;
 			for (auto equal160BytesP : seventeenAllocations) {
 				equal160Bytes* testPtr;
-				Assert::AreEqual(typeid(testPtr).name(), typeid(equal160BytesP).name());
+				Assert::AreEqual(typeid(testPtr).name(), typeid(*equal160BytesP.get()).name());
 				if (counter < 16) {
-					Assert::IsTrue(seventeenAllocations[counter] > seventeenAllocations[counter + 1]);
+					Assert::IsTrue(*seventeenAllocations[counter].get() > *seventeenAllocations[counter + 1].get());
 				}
 				counter++;
 			}
 			size_t freeListSize = pool.getLengthFreeList();
 			for (auto pointer : seventeenAllocations) {
-				pool.deallocate(pointer);
+				pool.deallocate(*pointer.get());
 				Assert::IsTrue(pool.getLengthFreeList() == freeListSize + 1);
 				freeListSize += 1;
 			}

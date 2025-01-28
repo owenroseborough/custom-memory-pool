@@ -133,7 +133,7 @@ public:
         free(pool_);
     }
     // Allocate a chunk of memory
-    T* allocate() {
+    shared_ptr<T*> allocate() {
         if (freeList_.empty()) {
             std::cerr << "Memory pool out of memory!" << std::endl;
             return nullptr; // Handle allocation failure
@@ -142,7 +142,7 @@ public:
         T* chunk = freeList_.back();
         takenMap_[chunk] = true;
         freeList_.pop_back();
-        return chunk;
+        return make_shared<T*>(chunk);
     }
     // Deallocate a chunk of memory
     void deallocate(T* ptr) {
@@ -154,6 +154,14 @@ public:
             cerr << "ptr to deallocate not found in memory pool!" << endl;
         }
     }
-    // new functionality
-
+    // defragment the memory pool to increase memory efficiency
+    // coalescing adjacent free blocks to reduce fragmentation
+    void coalesceMemoryPool() {
+        // if we are to coalesce memory pool, then no other thread can be accessing the memory
+        // locations
+        // if a thread is reading from a location and we try to move it, that would be wrong
+        // if a thread is modifying a location and we try to move it that would be wrong
+        // if we return shared pointers to memory addresses, how to guarantee that no one is modifying
+        // the locations?
+    }
 };
