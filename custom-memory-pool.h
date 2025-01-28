@@ -1,12 +1,16 @@
 #include <iostream>
 #include <vector>
+#include <map>
 #include <cassert>
 #include <memory>
+#include <type_traits>
 #include "get-cache-line-size.h"
 using namespace std;
 
 template <typename T>
 class MemoryPool {
+    static_assert(!is_same_v<T, void>, "MemoryPool cannot be instantiated with void");
+    static_assert(!is_same_v<T, void*>, "MemoryPool cannot be instantiated with void*");
 private:
     size_t chunkSize_;            // The size of each memory chunk
     size_t chunkAlign_;           // The alignment of memory chunks
@@ -15,11 +19,20 @@ private:
     size_t numItemsPerCacheLine_; // Number of items per cache line
     size_t poolByteSize_;         // Number of bytes in pool
     void* pool_;                  // The large block of memory
-    std::vector<T*> freeList_;    // Free list to track available memory chunks
+    vector<T*> freeList_;         // Free list to track available memory chunks
+    map<T*, bool> takenMap_;      // taken map to track allocated memory chunks
 public:
+    MemoryPool() = delete;                             // delete default constructor
+    MemoryPool(const MemoryPool&) = delete;            // delete copy constructor
+    MemoryPool(MemoryPool&&) = delete;                 // delete move constructor
+    MemoryPool& operator=(const MemoryPool&) = delete; // delete copy assignment operator
+    MemoryPool& operator=(MemoryPool&&) = delete;      // delete move assignment operator
+
     // Constructor to initialize the memory pool of template type
     MemoryPool(size_t poolSize, string alignment = "CacheLineAlignment"){
         
+        (poolSize == (size_t)0) ? throw invalid_argument::invalid_argument("MemoryPool cannot be instantiated with poolSize 0"): NULL ;
+
         chunkSize_ = sizeof(T);
         chunkAlign_ = alignof(T);
         poolSize_ = poolSize;
@@ -83,7 +96,24 @@ public:
         }
         // otherwise for read-heavy workloads that don't require cache line alignment
         else {
-            cout << "placeholder";
+            // Allocate a large block of memory for the pool
+            poolByteSize_ = poolSize_ * chunkSize_;
+            pool_ = malloc(poolSize_ * chunkSize_);
+            if (pool_ == nullptr) {  // Ensure memory was allocated
+                cerr << "Memory allocation failed!" << endl;
+                terminate();
+            }
+            // since in this type of allocation we are not cache line aligned
+            numItemsPerCacheLine_ = 0;  
+            cacheLinesPerObject_ = 0;
+
+            size_t objectCounter = 0;
+            char* startAllocAddress = static_cast<char*>(pool_);
+            while (objectCounter < poolSize_) {
+                freeList_.push_back(static_cast<T*>(static_cast<void*>(startAllocAddress)));
+                startAllocAddress += chunkSize_;
+                objectCounter++;
+            }
         }
     }
     size_t getCacheLinesPerObject() {
@@ -102,22 +132,28 @@ public:
     ~MemoryPool() {
         free(pool_);
     }
-
     // Allocate a chunk of memory
-    void* allocate() {
+    T* allocate() {
         if (freeList_.empty()) {
             std::cerr << "Memory pool out of memory!" << std::endl;
             return nullptr; // Handle allocation failure
         }
-
         // Pop a chunk from the free list
-        void* chunk = freeList_.back();
+        T* chunk = freeList_.back();
+        takenMap_[chunk] = true;
         freeList_.pop_back();
         return chunk;
     }
-
     // Deallocate a chunk of memory
-    void deallocate(void* ptr) {
-        freeList_.push_back(ptr); // Push the chunk back onto the free list
+    void deallocate(T* ptr) {
+        if (takenMap_.contains(ptr)) {
+            takenMap_.erase(ptr);
+            freeList_.push_back(ptr); // Push the chunk back onto the free list
+        }
+        else {
+            cerr << "ptr to deallocate not found in memory pool!" << endl;
+        }
     }
+    // new functionality
+
 };
